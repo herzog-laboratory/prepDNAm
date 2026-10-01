@@ -1,0 +1,31 @@
+---
+title: "1. Samples"
+params:
+  run_dir: NULL
+---
+
+```{r setup, include=FALSE}
+source("_setup.R", local = TRUE)
+samples <- prepDNAm::qc_table_samples(rd)
+```
+
+Every sample of the run with its QC metrics. `removed` samples are dropped before normalisation; `reasons` are `excluded` (listed by the user), `low_intensity` (median methylated or unmethylated log2 intensity below `r cfg$intensity_threshold`) and `failed_probes` (more than `r 100 * cfg$failed_probe_threshold`% of probes with detection p > `r cfg$detp_threshold`). The table can be filtered and exported.
+
+```{r}
+cols <- c("basename", "batch", "removed", "reasons", "mMed", "uMed", "frac_failed_probes", "rho",
+          "snp_outlier", "n_missing", "predicted_sex")
+extra <- setdiff(names(samples), c(cols, "path", "exclude", "xMed", "yMed", "pheno_path", "pheno_dir"))
+tab <- samples[, c(intersect(cols, names(samples)), extra)]
+t <- qc_table(tab, round_cols = c("mMed", "uMed", "rho", "snp_outlier"))
+if ("frac_failed_probes" %in% names(tab)) t <- DT::formatSignif(t, "frac_failed_probes", 2)
+t |> DT::formatStyle("removed", target = "row", backgroundColor = DT::styleEqual(TRUE, "#fdecea"))
+```
+
+## Metrics
+
+* **mMed / uMed**: median log2 intensity of methylated / unmethylated signal (raw). Low values indicate poor hybridisation or degraded DNA.
+* **frac_failed_probes**: fraction of probes with detection p-value above threshold.
+* **rho**: signal-to-noise estimate from the type II beta distribution (page 3).
+* **snp_outlier**: `ewastools` SNP outlier metric (log odds; values above about &minus;4 suggest contamination or mixed samples).
+* **n_missing**: values imputed for the sample after masking failed probes (retained samples only).
+* **predicted_sex**: from chrX / chrY intensities (page 5).

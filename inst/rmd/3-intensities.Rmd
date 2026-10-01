@@ -1,0 +1,48 @@
+---
+title: "3. Intensities & signal-to-noise"
+params:
+  run_dir: NULL
+---
+
+```{r setup, include=FALSE}
+source("_setup.R", local = TRUE)
+```
+
+## Median intensities
+
+Median log2 intensity of the methylated versus the unmethylated channel per sample, before any correction. Samples below the dashed threshold (`r cfg$intensity_threshold`) in either channel are removed.
+
+```{r, results="asis"}
+p <- prepDNAm::qc_plot_intensities(rd)
+if (is.null(p)) not_available("Intensity data")
+```
+
+```{r, fig.width=7, fig.height=7}
+interactive_plot(p, height = 600)
+```
+
+## Failed probes per sample
+
+Fraction of probes with detection p-value above `r cfg$detp_threshold` (log scale); samples above the dashed line (`r cfg$failed_probe_threshold`) are removed.
+
+```{r, results="asis"}
+p <- prepDNAm::qc_plot_failed_probes(rd)
+if (is.null(p)) not_available("Detection p-values")
+```
+
+```{r, fig.width=9, fig.height=4.5}
+interactive_plot(p, height = 420)
+```
+
+## Signal-to-noise
+
+Estimated signal-to-noise ratio (rho) per sample, from the positions of the unmethylated and methylated peaks of the raw type II beta distribution (see `?rhoEstimator`). Low values indicate compressed beta distributions, e.g. from degraded or low-input DNA; the metric can be useful for exploring storage effects in biobanked samples and is cell-type dependent.
+
+```{r, results="asis"}
+p <- prepDNAm::qc_plot_rho(rd)
+if (is.null(p)) not_available("Signal-to-noise data")
+```
+
+```{r, fig.width=9, fig.height=4.5}
+interactive_plot(p, height = 420)
+```

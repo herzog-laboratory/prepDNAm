@@ -1,0 +1,28 @@
+---
+title: "4. Beta densities"
+params:
+  run_dir: NULL
+---
+
+```{r setup, include=FALSE}
+source("_setup.R", local = TRUE)
+stages <- prepDNAm::qc_density_stages(rd)
+labels <- c(raw = "Raw", noob = "After Noob background and dye-bias correction",
+            bmiq = "After BMIQ probe-type normalisation (retained samples)")
+nb <- length(rd$batches)
+fig_h <- 3.5 * ceiling(nb / 3) + 1
+```
+
+Per-sample beta value densities at each processing stage. Good samples show two sharp peaks near 0 and 1; each sample has its own colour and removed samples are dashed. Hover over a curve to see the sample; drag to zoom, double-click to reset.
+
+```{r, results="asis"}
+if (length(stages) == 0) not_available("Density data")
+```
+
+```{r, results="asis"}
+for (s in stages) {
+  cat("\n\n## ", labels[[s]], "\n\n", sep = "")
+  p <- prepDNAm::qc_plot_densities(rd, stage = s, n_points = 128)
+  emit_widget(interactive_plot(p, height = round(90 * fig_h)))
+}
+```

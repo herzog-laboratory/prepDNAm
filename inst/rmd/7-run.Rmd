@@ -1,0 +1,47 @@
+---
+title: "7. Run details"
+params:
+  run_dir: NULL
+---
+
+```{r setup, include=FALSE}
+source("_setup.R", local = TRUE)
+```
+
+## Configuration
+
+```{r}
+x <- unclass(cfg)
+x <- x[!vapply(x, is.null, logical(1))]
+DT::datatable(data.frame(setting = names(x), value = vapply(x, function(v) paste(format(v), collapse = ", "), character(1))),
+              rownames = FALSE, options = list(dom = "t", pageLength = 100))
+```
+
+## Thresholds
+
+```{r}
+DT::datatable(prepDNAm::qc_thresholds(rd), rownames = FALSE, options = list(dom = "t", pageLength = 100))
+```
+
+## Stages
+
+```{r}
+st <- prepDNAm::run_summary(run_dir)$stages
+DT::datatable(st, rownames = FALSE, options = list(dom = "t", pageLength = 100))
+```
+
+## Environment
+
+```{r, results="asis"}
+i <- rd$info
+cat(sprintf("* prepDNAm %s, %s, %s\n* host: %s (user %s)\n* seed: %s, cores: %s\n",
+            i$prepDNAm_version, i$r_version, i$platform, i$host, i$user, i$seed, i$cores))
+if (!is.null(i$md5)) cat(sprintf("* md5 samples.csv: `%s`%s\n", i$md5$samples,
+                                 if (!is.null(i$md5$pheno)) sprintf(", pheno: `%s`", i$md5$pheno) else ""))
+```
+
+```{r}
+pk <- rd$info$packages
+if (!is.null(pk)) DT::datatable(data.frame(package = names(pk), version = unlist(pk)), rownames = FALSE,
+                                options = list(pageLength = 15, dom = "ftp"))
+```

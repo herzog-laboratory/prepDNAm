@@ -1,0 +1,11 @@
+^LICENSE\.md$
+^dev$
+^DESIGN\.md$
+^REVIEW_LOG\.md$
+^\.vscode$
+^\.DS_Store$
+^\.github$
+^setup\.R$
+^data-raw$
+^doc$
+^Meta$

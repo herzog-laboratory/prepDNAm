@@ -1,0 +1,133 @@
+---
+title: "5. Sample identity & biology"
+params:
+  run_dir: NULL
+---
+
+```{r setup, include=FALSE}
+source("_setup.R", local = TRUE)
+sex <- prepDNAm::qc_table_sex(rd, sex_col = opts$sex_col)
+snp <- prepDNAm::qc_snp_agreement(rd, donor_col = opts$donor_col)
+```
+
+## Sex check
+
+Predicted sex from the median log2 copy number of chrX and chrY probes (samples below the dashed line, `yMed - xMed < -2`, are called female, as in `minfi::getSex()`). If the sample sheet has a `sex` column, mismatches are shown as triangles.
+
+```{r, results="asis"}
+if (is.null(sex)) {
+  not_available("Sex prediction")
+} else if (all(is.na(sex$reported_sex))) {
+  note(sprintf("No `sex` column in the sample sheet: predicted sex is shown without comparison (%d female, %d male).",
+               sum(sex$predicted_sex == "F", na.rm = TRUE), sum(sex$predicted_sex == "M", na.rm = TRUE)))
+} else {
+  n_cmp <- sum(!is.na(sex$reported_sex) & !is.na(sex$predicted_sex))
+  n_mis <- sum(sex$sex_mismatch)
+  cat(sprintf("<div class=\"alert %s\">**%s** &mdash; %d of %d samples with reported sex match the predicted sex%s.</div>\n",
+              if (n_mis == 0) "alert-success" else "alert-warning",
+              if (n_mis == 0) "No sex mismatches" else sprintf("%d sex mismatch(es)", n_mis),
+              n_cmp - n_mis, n_cmp,
+              if (n_cmp < nrow(sex)) sprintf("; %d without reported or predicted sex", nrow(sex) - n_cmp) else ""))
+}
+```
+
+```{r}
+if (!is.null(sex) && !all(is.na(sex$reported_sex))) {
+  lab <- function(v) factor(ifelse(is.na(v), "unknown", c(F = "female", M = "male")[v]), levels = c("female", "male", "unknown"))
+  tab <- table(reported = lab(sex$reported_sex), predicted = lab(sex$predicted_sex))
+  tab <- tab[rowSums(tab) > 0, colSums(tab) > 0, drop = FALSE]
+  knitr::kable(as.data.frame.matrix(tab), format = "html", caption = "Reported (rows) vs predicted (columns) sex",
+               table.attr = "class=\"table table-condensed\" style=\"width:auto\"")
+}
+```
+
+```{r, fig.width=7, fig.height=6}
+interactive_plot(prepDNAm::qc_plot_sex(rd, sex_col = opts$sex_col), height = 520, width = 600)
+```
+
+All samples; mismatches are highlighted and sorted to the top.
+
+```{r}
+if (!is.null(sex)) {
+  sex <- sex[order(!sex$sex_mismatch), ]
+  qc_table(sex, round_cols = c("xMed", "yMed"), page = 10) |>
+    DT::formatStyle("sex_mismatch", target = "row", backgroundColor = DT::styleEqual(TRUE, "#fff3cd"))
+}
+```
+
+## Genotype agreement
+
+Genotypes called from the SNP (`rs`) probes on the array group the retained samples into donors. Samples of the same donor (technical replicates, longitudinal samples) should agree; unexpected agreement between different donors indicates a sample swap or duplication, and disagreement within a reported donor a mislabelled sample. To compare against the expected donors, give the sample sheet a `donor_id` column (or name another column with `qc_report(donor_col = ...)`).
+
+```{r, results="asis"}
+if (is.null(snp)) {
+  if (!rd$has[["rs"]]) note("SNP probe betas were not saved (`save_rs = TRUE`) or are not available for this input.") else note("Package `ewastools` is not installed.")
+} else {
+  d <- snp$donors
+  dup <- d[d$n_samples_of_donor > 1, ]
+  cat(sprintf("%d samples form **%d inferred donors**; %d samples share a donor with at least one other sample.\n\n",
+              nrow(d), length(unique(d$inferred_donor)), nrow(dup)))
+  if (is.null(snp$donor_col)) note("No donor column in the sample sheet (e.g. `person`, `donor`): only inferred donors are shown.")
+  else if (nrow(snp$conflicts) == 0) note(sprintf("Genotypes agree with the reported donors in column `%s`: no conflicts.", snp$donor_col))
+  else cat(sprintf("<div class=\"alert alert-warning\">**%d conflict(s)** between genotypes and the reported donors in column `%s`.</div>\n", nrow(snp$conflicts), snp$donor_col))
+}
+```
+
+```{r}
+if (!is.null(snp) && !is.null(snp$conflicts) && nrow(snp$conflicts) > 0) qc_table(snp$conflicts, round_cols = "agreement", digits = 3, page = 10)
+```
+
+```{r}
+if (!is.null(snp)) qc_table(snp$donors[order(snp$donors$inferred_donor), ], page = 10)
+```
+
+```{r, results="asis"}
+if (!is.null(snp)) note("To inspect the SNP probe betas of each donor's samples against each other, run `prepDNAm::qc_snp_pairs_pdf(run_dir)` (one PDF page per donor).")
+```
+
+## Immune cell fraction
+
+Estimated epithelial, fibroblast and immune cell fractions (`EpiDISH`, robust partial correlation with the `centEpiFibIC` reference).
+
+```{r, results="asis"}
+ic <- suppressMessages(prepDNAm::qc_plot_ic(rd))
+if (is.null(ic)) note("Not available: needs a human array, a merged run and the `EpiDISH` package.")
+```
+
+```{r, fig.width=9, fig.height=4}
+interactive_plot(ic, height = 380)
+```
+
+### Immune cell subtypes
+
+The immune fraction split into 12 immune cell types with hierarchical EpiDISH (`hepidish()`, `cent12CT` reference within the immune compartment); epithelial and fibroblast fractions in grey. The subtype reference is derived from blood, so treat subtype fractions in solid tissues as indicative.
+
+```{r, fig.width=9, fig.height=4.5}
+if (!is.null(ic)) interactive_plot(suppressMessages(prepDNAm::qc_plot_ic(rd, subtypes = TRUE)), height = 420)
+```
+
+## Epigenetic age
+
+WID general clock age (`WIDclocks`), against chronological age if the sample sheet has an `age` column (dashed line: identity).
+
+```{r, results="asis"}
+age <- suppressMessages(prepDNAm::qc_plot_age(rd))
+if (is.null(age)) note("Not available: needs a human array, a merged run and the `WIDclocks` package.")
+```
+
+```{r, fig.width=6, fig.height=6}
+interactive_plot(age, height = 520, width = 560)
+```
+
+## Marker CpGs
+
+Beta values of two well-characterised CpGs: **cg05575921** (AHRR) is hypomethylated in current smokers (typically &lt; 0.7 in blood), **cg16867657** (ELOVL2) increases with age.
+
+```{r, results="asis"}
+mk <- suppressMessages(prepDNAm::qc_plot_index_cpgs(rd))
+if (is.null(mk)) note("Not available: needs a human array and a merged run containing these probes.")
+```
+
+```{r, fig.width=9, fig.height=4}
+interactive_plot(mk, height = 380)
+```

@@ -1,0 +1,153 @@
+---
+title: "Preparing the sample sheet"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Preparing the sample sheet}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = FALSE)
+```
+
+The sample sheet (`pheno` in `qc_config()`) is optional, but it is what lets
+prepDNAm check the samples against what you expect: reported sex against the
+sex predicted from the data, chronological against epigenetic age, and which
+samples should come from the same person. This guide describes the format.
+
+# File format
+
+A `.csv`, `.tsv`/`.txt`, `.xlsx`, `.rds` or `.Rdata` file, or a data frame, with
+one row per sample and a header row. Column names are case-sensitive.
+
+```
+basename,sex,age,donor_id,group
+206467010001_R01C01,F,34.5,D001,control
+206467010001_R02C01,M,51,D002,case
+206467010001_R03C01,F,,D001,control
+206467010001_R04C01,unknown,62,D003,case
+```
+
+# Standard columns
+
+| Column | Required | Format | Used for |
+|---|---|---|---|
+| `basename` | yes | sample name exactly as in the data | matching rows to samples |
+| `sex` | no | `F` / `M` | sex check (report page 5), `Sex` in the CSV export |
+| `age` | no | number, in years | epigenetic vs chronological age (page 5), `Age` in the CSV export |
+| `donor_id` | no | any text | genotype identity check (page 5), SNP pair plots |
+| `batch` | no | any text | default batching |
+| `exclude` | no | `TRUE` / `FALSE` | samples to drop from the start |
+
+All other columns are kept: they appear in the samples table, are carried into
+`pheno_postQC.rds` and the export, and are tested against the principal
+components on the PCA page (useful to spot batch effects, e.g. by plate or
+collection date).
+
+## `basename`
+
+The sample identifier as it appears in the data:
+
+- **IDATs:** the file name without `_Grn.idat` / `_Red.idat` (and without
+  `.gz`), usually `<Sentrix ID>_<position>`, e.g. `206467010001_R01C01` for
+  `206467010001_R01C01_Grn.idat`. Not the path, just the name.
+- **Signal-intensity matrix:** the column name without the suffix, e.g.
+  `GSM1234567` for `GSM1234567 Methylated signal`.
+- **Beta matrix:** the column name.
+
+Matching is exact. Every `basename` in the sample sheet must be found in the
+data (otherwise the run stops and lists the missing ones); samples in the data
+but not in the sample sheet are dropped with a message, so the sample sheet
+can be used to select a subset. Values must be unique and not empty. A column
+called `Basename` (any capitalisation) is accepted.
+
+## `sex`
+
+Reported sex, as `F` or `M`. `female` / `male` in any capitalisation are also
+accepted. If not known, leave the cell empty or write `NA` or `unknown`.
+
+Numeric codes (`0`/`1`, `1`/`2`) are **not** accepted: conventions differ
+between cohorts and a silent mix-up would flag every sample as a mismatch or
+hide real ones. Recode them to `F`/`M` first, e.g.
+
+```{r}
+pheno$sex <- c(`1` = "M", `2` = "F")[as.character(pheno$sex_code)]
+```
+
+Predicted sex (from the chrX and chrY probe intensities) is compared with this
+column and mismatches are listed in the report. A mismatch usually means a
+sample swap or a sample sheet error, and occasionally a sex chromosome
+aneuploidy.
+
+## `age`
+
+Chronological age at sampling, in years, as a plain number. Decimals are fine
+(`34.5`, `0.5` for six months). No units (`45y`), ranges (`40-50`) or text.
+Leave empty or `NA` if not known. Ages above 120 give a warning, since they
+usually mean the wrong unit (e.g. months).
+
+## `donor_id`
+
+An identifier for the person each sample comes from. Samples from the same
+person (technical replicates, repeated samples over time, different tissues)
+share a `donor_id`; everyone else has a different one. Any text works (a study
+ID, a pseudonym); it does not need to be meaningful outside the sample sheet.
+
+The array's SNP probes give each sample a genotype fingerprint. With
+`donor_id`, the report lists samples whose genotype disagrees with their
+donor's other samples (a mislabelled or swapped sample) or matches a
+different donor's (a duplicate or swap). Without it, the report still shows
+which samples appear to come from the same person. This needs IDAT input and
+the `ewastools` package.
+
+## `batch` and `exclude`
+
+- `batch`: used as the batching mode when `qc_config(batch = NULL)`, e.g. the
+  processing plate. Any other column can be chosen with `batch = "<column>"`.
+- `exclude`: `TRUE`, `yes` or `1` marks samples to remove before
+  normalisation (e.g. known failed samples). They are still read and shown in
+  the report with the reason `excluded`. Excluded samples can also be given
+  with `qc_config(exclude = )` as a vector or file of basenames.
+
+# Checks when the run starts
+
+When the run is initialised, prepDNAm checks the sample sheet and stops with a
+message listing the affected samples if:
+
+- `basename` is missing, has empty or duplicated values, or names samples not
+  found in the data;
+- `sex` has values other than F/M (or the accepted spellings and unknowns);
+- `age` has values that are not numbers, or negative ages.
+
+An `age` column stored as text (common in Excel files) is converted to
+numbers.
+
+# Other column names
+
+If your sample sheet uses other names, prepDNAm recognises common
+alternatives and says which column it uses:
+
+| Standard | Also recognised |
+|---|---|
+| `sex` | `gender`, `reported_sex` |
+| `age` | `age_at_sampling`, `chron_age`, `chronological_age` |
+| `donor_id` | `donor`, `person`, `person_id`, `individual`, `subject`, `patient`, `participant` |
+
+Renaming to the standard names is recommended. For any other name, pass it
+explicitly:
+
+```{r}
+qc_report("runs/study1", sex_col = "Sex_reported", donor_col = "PatientNo")
+export_beta_csv("runs/study1", sex_col = "Sex_reported", age_col = "AgeYears")
+```
+
+# GEO data
+
+For GEO series, the sample names in the data are usually the GSM accessions,
+so use them as `basename`. Sex and age are typically in the
+`characteristics_ch1` fields of the series matrix, in study-specific wording
+(`gender: female`, `age (years): 45`); extract them into `sex` and `age`
+columns in the format above. When exporting for sharing, `export_beta_csv()`
+uses `basename` as `SampleID`; pass `sample_id = "<column>"` to use another
+column.

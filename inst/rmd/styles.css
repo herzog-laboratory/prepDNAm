@@ -1,0 +1,10 @@
+/* Shared styles for the prepDNAm report pages. */
+
+/* navbar: fit all pages on one line on a laptop screen */
+.navbar-nav > li > a { font-size: 14px; padding-left: 9px; padding-right: 9px; }
+.navbar-brand { font-size: 17px; }
+
+/* overview stat tiles */
+.stat { text-align: center; padding: .8em; border: 1px solid #dee2e6; border-radius: 4px; margin-bottom: 1em; }
+.stat .value { font-size: 2.2em; font-weight: 600; line-height: 1.2; }
+.stat .label { color: #6c757d; }

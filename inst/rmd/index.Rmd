@@ -1,0 +1,96 @@
+---
+title: "prepDNAm QC report"
+params:
+  run_dir: NULL
+---
+
+```{r setup, include=FALSE}
+source("_setup.R", local = TRUE)
+samples <- prepDNAm::qc_table_samples(rd)
+batches <- prepDNAm::qc_table_batches(rd)
+probes <- prepDNAm::qc_table_probes(rd)
+n_removed <- sum(samples$removed)
+merged <- rd$has[["beta_merged"]]
+```
+
+<div class="row">
+<div class="col-md-4"><div class="stat">
+<div class="value">`r nrow(samples) - n_removed` / `r nrow(samples)`</div><div class="label">samples retained</div>
+</div></div>
+<div class="col-md-4"><div class="stat">
+<div class="value">`r if (merged) format(rd$info$n_probes_retained, big.mark = ",") else "&ndash;"`</div><div class="label">probes retained`r if (merged) sprintf(" (%s removed)", format(rd$info$n_probes_removed, big.mark = ",")) else " (run not merged yet)"`</div>
+</div></div>
+<div class="col-md-4"><div class="stat">
+<div class="value">`r nrow(batches)`</div><div class="label">batch(es), by `r cfg$batch`</div>
+</div></div>
+</div>
+
+## Run
+
+```{r}
+created <- as.POSIXct(cfg$created, format = "%Y-%m-%dT%H:%M:%S%z")
+details <- data.frame(
+  setting = c("Run name", "Date", "Time", "Array", "Input type", "Batching", "prepDNAm version"),
+  value = c(cfg$run_name, format(created, "%Y-%m-%d"), format(created, "%H:%M %Z"), rd$array$label,
+            cfg$input_type, cfg$batch, cfg$prepDNAm_version))
+knitr::kable(details, col.names = NULL, table.attr = "class=\"table table-condensed\" style=\"width:auto\"", format = "html")
+```
+
+```{r, results="asis"}
+failed <- list.files(run_dir, pattern = "^FAILED_.*\\.txt$")
+if (length(failed) > 0) cat("<div class=\"alert alert-danger\">**Failed stage(s):** ", paste(failed, collapse = ", "), " &mdash; see the files in the run directory.</div>\n")
+if (!merged) cat("<div class=\"alert alert-warning\">The run has not been merged yet; pages that need `beta_merged` show placeholders.</div>\n")
+sex <- prepDNAm::qc_table_sex(rd, sex_col = opts$sex_col)
+if (!is.null(sex) && any(sex$sex_mismatch)) cat(sprintf("<div class=\"alert alert-warning\">**%d sample(s) with a sex mismatch** between reported and predicted sex &mdash; see page 5.</div>\n", sum(sex$sex_mismatch)))
+```
+
+## Batches
+
+```{r}
+b <- batches
+b$pass_rate <- round(100 * b$pass_rate, 1)
+names(b) <- c("batch", "samples", "removed", "retained", "pass rate (%)", "excluded", "low intensity", "failed probes")
+DT::datatable(b, rownames = FALSE, options = list(dom = "t", pageLength = 100)) |>
+  DT::formatStyle("pass rate (%)", backgroundColor = DT::styleInterval(c(80, 95), c("#f8d7da", "#fff3cd", "#d4edda")))
+```
+
+## Removed samples
+
+```{r, results="asis"}
+if (n_removed == 0) note("No samples were removed.")
+```
+
+```{r}
+if (n_removed > 0) {
+  rmv <- samples[samples$removed, intersect(c("basename", "batch", "reasons", "mMed", "uMed", "frac_failed_probes"), names(samples))]
+  qc_table(rmv, round_cols = c("mMed", "uMed"), page = 10) |> DT::formatSignif("frac_failed_probes", 2)
+}
+```
+
+## Probes
+
+```{r, results="asis"}
+if (is.null(probes)) note("Probe removal is recorded at the merge stage.")
+```
+
+```{r}
+if (!is.null(probes)) {
+  p <- probes
+  p$description <- c(chrY = "chrY (and chr0/chrM on EPIC v2)", snp = "overlapping SNPs", non_cpg = "non-CpG probes",
+                     zhou = "cross-reactive / unreliable (Zhou et al. 2017)",
+                     detP = sprintf("failed (detP > %s) in > %s of samples", cfg$detp_threshold, cfg$failed_sample_threshold),
+                     na_fraction = sprintf("missing in > %s of samples", cfg$probe_na_threshold),
+                     not_in_all_batches = "not present in every batch", unique = "distinct probes removed")[p$reason]
+  DT::datatable(p, rownames = FALSE, options = list(dom = "t", pageLength = 100))
+}
+```
+
+## Pages
+
+1. **Samples** &mdash; per-sample QC metrics, removals and reasons.
+2. **Controls** &mdash; Illumina control probe intensities (IDAT input).
+3. **Intensities** &mdash; median intensities, failed-probe fractions and signal-to-noise (rho).
+4. **Beta densities** &mdash; raw, Noob and BMIQ distributions.
+5. **Identity & biology** &mdash; sex check, genotype agreement, immune cells, age, marker CpGs.
+6. **Dimensionality reduction** &mdash; PCA / UMAP and batch-effect screen.
+7. **Run details** &mdash; configuration, thresholds, versions, stage timings.

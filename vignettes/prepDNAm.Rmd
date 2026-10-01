@@ -1,0 +1,312 @@
+---
+title: "Getting started with prepDNAm"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with prepDNAm}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = FALSE)
+```
+
+prepDNAm turns Illumina DNA methylation array data into an analysis-ready beta
+matrix and an HTML QC report. This guide covers installation, preparing a
+run, running it (interactively or on a cluster), what it produces, and how to
+export the results.
+
+# Installation
+
+prepDNAm needs R >= 4.1. Most dependencies come from Bioconductor, and some
+of the optional ones from GitHub.
+
+```{r}
+install.packages(c("remotes", "BiocManager"))
+BiocManager::install(c("minfi", "ChAMP", "impute"))
+remotes::install_github("chiaraherzog/prepDNAm")
+```
+
+Install the manifest and annotation packages for the arrays you use:
+
+| Array | `array =` | Packages |
+|---|---|---|
+| Infinium HumanMethylation450 | `"450k"` | `IlluminaHumanMethylation450kmanifest`, `IlluminaHumanMethylation450kanno.ilmn12.hg19` |
+| Infinium MethylationEPIC v1.0 | `"EPIC"` | `IlluminaHumanMethylationEPICmanifest`, `IlluminaHumanMethylationEPICanno.ilm10b4.hg19` |
+| Infinium MethylationEPIC v2.0 | `"EPICv2"` | `IlluminaHumanMethylationEPICv2manifest`, `IlluminaHumanMethylationEPICv2anno.20a1.hg38` |
+| Infinium Mouse Methylation | `"mouse"` | `chiaraherzog/IlluminaMouseMethylationmanifest`, `chiaraherzog/IlluminaMouseMethylationanno.12.v1.mm10` (GitHub) |
+
+```{r}
+# e.g. EPIC v2
+BiocManager::install(c("IlluminaHumanMethylationEPICv2manifest",
+                       "IlluminaHumanMethylationEPICv2anno.20a1.hg38"))
+# mouse (GitHub)
+remotes::install_github(c("chiaraherzog/IlluminaMouseMethylationmanifest",
+                          "chiaraherzog/IlluminaMouseMethylationanno.12.v1.mm10"))
+```
+
+Optional packages add features; everything else works without them:
+
+| Package | Source | Used for |
+|---|---|---|
+| `ewastools` | `remotes::install_github("hhhh5/ewastools")` | SNP outlier metric, genotype agreement / sample identity checks |
+| `rmarkdown`, `knitr`, `plotly`, `DT`, `htmltools` | CRAN | the HTML report |
+| `EpiDISH` | Bioconductor | epithelial / fibroblast / immune cell fractions in the report |
+| `WIDclocks` | `remotes::install_github("chiaraherzog/WIDclocks")` | epigenetic age in the report |
+| `uwot` | CRAN | UMAP in the report |
+| `readxl` | CRAN | `.xlsx` sample sheets |
+| `shinyMethyl` | Bioconductor | `save_shiny = TRUE` |
+
+`run_prepDNAm()` checks up front that the packages a configuration needs are
+installed and says which are missing.
+
+**pandoc.** The report needs pandoc (>= 2.0). RStudio, Positron and Quarto
+include one. Outside those (e.g. plain `Rscript` or a cluster), install pandoc
+or point R to an existing copy:
+
+```{r}
+Sys.setenv(RSTUDIO_PANDOC = "/Applications/quarto/bin/tools/aarch64")  # macOS, Quarto
+```
+
+# Preparing a run
+
+## Input
+
+`input` is one of:
+
+- **IDAT files**: a directory, searched recursively (`.idat` or `.idat.gz`;
+  each sample needs a `_Grn` and a `_Red` file). This is the full pipeline:
+  control probes, Noob background and dye-bias correction, detection
+  p-values, SNP probes, sex estimation.
+- **A signal-intensity matrix** (e.g. a GEO supplementary file): one row per
+  probe, columns `<sample> Unmethylated signal`, `<sample> Methylated signal`
+  and optionally `<sample> Detection Pval`. Change the suffixes with
+  `unmeth_pattern`, `meth_pattern`, `detp_pattern` if your file uses others.
+- **A beta matrix** (`.csv`/`.txt` or `.rds`/`.Rdata`): probes in rows,
+  samples in columns. With `normalise = "auto"` (default) BMIQ is only run if
+  the type I / type II distributions look unnormalised.
+
+The input type is detected automatically; set `input_type` to override.
+Beta values must be between 0 and 1 (M-values are rejected).
+
+## Sample sheet
+
+The optional `pheno` sample sheet annotates the samples. Its `basename`
+column must match the sample names in the data exactly. The standard columns
+`sex`, `age` and `donor_id` switch on the sex check, the age comparison and
+the genotype identity check in the report; see `vignette("sample-sheet")`.
+
+## Configuration
+
+All options go into one configuration object. The most common ones:
+
+```{r}
+library(prepDNAm)
+
+cfg <- qc_config(
+  input   = "data/idats",
+  run_dir = "runs/study1",       # created by the run; its parent must exist
+  array   = "EPICv2",
+  pheno   = "data/samples.csv",
+  exclude = "data/exclude.txt",  # optional: samples to drop from the start
+  batch   = "chip",              # "none", "dir", "chip" or a sample sheet column
+  cores   = 4,
+  seed    = 1
+)
+cfg
+```
+
+- **Batches.** Reading and normalisation run per batch. Use `"dir"` for one
+  subdirectory per plate, `"chip"` for the Sentrix ID, a sample sheet column,
+  or `"none"`. By default: a `batch` column if the sample sheet has one, else
+  `"dir"` if the IDAT directory has subdirectories, else `"none"`. Filtering,
+  imputation and the sex call are always done on the pooled data, so the
+  result is the same however you batch.
+- **Thresholds.** Samples are removed if their median methylated or
+  unmethylated log2 intensity is below `intensity_threshold` (9.5) or more
+  than `failed_probe_threshold` (10%) of their probes have a detection
+  p-value above `detp_threshold` (0.01). Probes are removed if they fail in
+  more than `failed_sample_threshold` (10%) of samples, or are missing in
+  more than `probe_na_threshold` (80%).
+- **Probe lists.** chrY, SNP-overlapping, non-CpG and cross-reactive (Zhou et
+  al. 2017) probes are removed by default (`remove_chrY`, `remove_snp`,
+  `remove_non_cpg`, `remove_zhou`).
+- **EPIC v2.** `compatible_subset = TRUE` (default for EPIC v2) also writes
+  the matrix restricted to probes shared with EPIC v1, with v1 IDs, for
+  combining with EPIC v1 data and for tools trained on EPIC v1.
+- **Outputs.** `save_rs` (SNP probe betas, on by default where available),
+  `save_sex`, `save_na_mask`, `save_shiny`, `export_csv` (see Exporting).
+
+See `?qc_config` for every option.
+
+# Running
+
+```{r}
+res <- run_prepDNAm(cfg)
+res
+```
+
+This runs the stages in order:
+
+1. `qc_init()`: creates the run directory, writes `config.yml`,
+   `samples.csv` and `run_info.json`.
+2. `qc_read()`: per batch, reads the data and extracts QC metrics.
+3. `qc_filter_samples()`: per batch, flags samples to remove and why.
+4. `qc_normalise()`: per batch, BMIQ on the retained samples.
+5. `qc_merge()`: combines batches, removes probes, imputes, calls sex.
+6. `export_beta_csv()`, if `export_csv = TRUE`.
+
+The report is a separate step:
+
+```{r}
+qc_report("runs/study1", open = TRUE)
+```
+
+**Resuming.** Each stage skips work whose outputs already exist. If a run
+stops (an error, a killed job), fix the cause and call
+`run_prepDNAm("runs/study1")` again: it continues from where it stopped. A
+failed stage leaves `FAILED_<stage>.txt` in the run directory with the error
+and traceback. Use `force = TRUE` to recompute everything.
+
+A run directory belongs to one configuration: calling `run_prepDNAm()` with
+different options on an existing run directory is an error (use a new
+`run_dir`, or `force = TRUE`). `export_csv` is the exception and can be
+switched on for a finished run.
+
+**Stages one at a time.** The stages can also be called individually, which
+is useful for inspecting intermediate results or running batches in parallel
+as separate jobs:
+
+```{r}
+qc_init(cfg)
+qc_read("runs/study1", batch = "206467010001")
+```
+
+`run_summary("runs/study1")` shows sample and probe counts and the status and
+duration of every stage.
+
+## On a cluster
+
+`inst/scripts/run_prepDNAm.R` runs a configuration from a YAML file whose
+keys are the arguments of `qc_config()`:
+
+```yaml
+# study1.yml
+input: /data/idats/study1
+run_dir: /data/runs/study1
+array: EPICv2
+pheno: /data/pheno/study1.csv
+batch: chip
+cores: 8
+export_csv: true
+```
+
+```sh
+script=$(Rscript -e 'cat(system.file("scripts/run_prepDNAm.R", package = "prepDNAm"))')
+Rscript "$script" --config study1.yml            # add --force, --quiet as needed
+```
+
+The exit status is non-zero if a stage failed. For example, with Slurm:
+
+```sh
+#!/bin/bash
+#SBATCH --job-name=prepDNAm
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+#SBATCH --time=12:00:00
+module load R
+script=$(Rscript -e 'cat(system.file("scripts/run_prepDNAm.R", package = "prepDNAm"))')
+Rscript "$script" --config study1.yml --quiet
+```
+
+`cores` is capped at what the job was allocated. Resubmitting the same job
+after a failure resumes the run. Memory use grows with the number of samples
+per batch (read and normalisation) and with the total number of samples (the
+merge step holds the pooled matrix).
+
+# Outputs
+
+Everything is written into the run directory:
+
+| File | Content |
+|---|---|
+| `beta_merged.rds` | final beta matrix, probes x retained samples |
+| `beta_merged_compatible.rds` | EPIC v2: EPIC v1/v2 compatible probes with v1 IDs |
+| `pheno_postQC.rds` | sample sheet of the retained samples with QC metrics and predicted sex |
+| `sample_qc.csv` | QC metrics of all samples, with `removed` and `reasons` |
+| `probes_removed.csv` | removed probes and the reason |
+| `imputed.csv` | per sample: number of values masked and imputed |
+| `rs_merged.rds` | SNP probe betas of the retained samples |
+| `config.yml`, `samples.csv`, `run_info.json`, `log.txt` | configuration, sample sheet, versions / seed / checksums / stage timings, log |
+| `batches/<batch>/` | per-batch intermediate files |
+| `report/` | the HTML report |
+| `export/` | CSV exports |
+
+```{r}
+beta  <- readRDS("runs/study1/beta_merged.rds")
+pheno <- readRDS("runs/study1/pheno_postQC.rds")
+stopifnot(identical(colnames(beta), pheno$basename))
+```
+
+# The report
+
+`qc_report()` writes one HTML page per topic into `run_dir/report/`; open
+`index.html`. Each page is a single self-contained file that can be shared on
+its own (`self_contained = FALSE` writes smaller pages that share a
+`site_libs/` folder instead).
+
+| Page | Content |
+|---|---|
+| Overview | run details, samples and probes retained, per-batch pass rates, removed samples |
+| 1 Samples | every sample with all QC metrics and removal reasons (searchable, exportable) |
+| 2 Controls | Illumina control probes (IDAT input) |
+| 3 Intensities | median intensities and failed-probe fractions against the thresholds, signal-to-noise per sample |
+| 4 Densities | beta distributions before and after normalisation, per sample |
+| 5 Identity | predicted vs reported sex, genotype-based donor checks, immune cell fractions, epigenetic age, marker CpGs |
+| 6 PCA / UMAP | dimensionality reduction and association of principal components with sample variables |
+| 7 Run | configuration, thresholds, stage timings, package versions |
+
+Pages show a short note instead of content that is not available for the
+input type or array. The report can be re-rendered at any time without
+recomputing (`force = TRUE`); `sex_col` and `donor_col` name sample sheet
+columns that do not follow the standard names.
+
+Every plot and table is made by an exported function (`qc_plot_*()`,
+`qc_table_*()`, `qc_estimate_*()`, `qc_dimred()`), so the same figures can be
+used in your own reports:
+
+```{r}
+rd <- qc_data("runs/study1")      # load once, reuse
+qc_plot_intensities(rd)
+plotly::ggplotly(qc_plot_densities(rd, "bmiq"))
+qc_table_sex(rd)
+```
+
+To look at the SNP probes of each donor's samples against each other (one
+page per donor):
+
+```{r}
+qc_snp_pairs_pdf("runs/study1")   # writes runs/study1/snp_pairs.pdf
+```
+
+# Exporting
+
+`export_beta_csv()` writes the final beta matrix and sample metadata as CSV in
+the DNA Methylation Array Data Standard (V-2410), the format read by
+`biolearn`: a `cpgSite` column and one column per sample, betas rounded to
+three decimals, `NaN` for missing values, at most 1000 samples per file; and
+a metadata file with `SampleID`, `Sex` (0 = female, 1 = male), `Age`,
+`PredictedSex` and the other sample sheet columns. Probe IDs are as in
+`beta_merged.rds` (EPIC v2 IDs keep their suffix); the compatible export has
+EPIC v1 IDs. Rounding to three decimals follows the standard; `digits = NULL`
+(or `qc_config(export_digits = "full")`) keeps full precision.
+
+```{r}
+export_beta_csv("runs/study1")                              # into runs/study1/export/
+export_beta_csv("runs/study1", sample_id = "geo_accession")  # use another ID column
+export_beta_csv("runs/study1", compatible = TRUE)            # EPIC v2: v1-compatible matrix
+export_beta_csv("runs/study1", digits = NULL)                # full precision, as beta_merged.rds
+```
+
+With `qc_config(export_csv = TRUE)` the export runs at the end of
+`run_prepDNAm()` (for EPIC v2 both the full and the compatible matrix).

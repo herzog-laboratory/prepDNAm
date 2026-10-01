@@ -1,0 +1,49 @@
+---
+title: "6. Dimensionality reduction"
+params:
+  run_dir: NULL
+---
+
+```{r setup, include=FALSE}
+source("_setup.R", local = TRUE)
+dr <- NULL
+if (rd$has[["beta_merged"]] && rd$info$n_samples_retained >= 3) dr <- prepDNAm::qc_dimred(rd)
+```
+
+Principal component analysis (linear) and UMAP (non-linear) of the retained samples on the `r if (!is.null(dr)) format(dr$n_probes, big.mark = ",") else "most"` most variable probes, coloured by each sample sheet variable. Technical variables (batch, Sentrix ID and position, plate, well) should not separate samples. The heatmap at the bottom tests each principal component against each variable (Kruskal-Wallis for categorical, Pearson correlation for numeric variables), with technical and biological variables shown separately and similar variables clustered together; per-sample QC metrics are on pages 1 and 3.
+
+```{r, results="asis"}
+if (is.null(dr)) note("Needs a merged run with at least 3 retained samples.")
+if (!is.null(dr) && !dr$has_umap) note("Package `uwot` is not installed: UMAP not shown.")
+```
+
+## PCA
+
+```{r, results="asis", fig.width=6, fig.height=6}
+if (!is.null(dr)) {
+  plots <- lapply(c(list(NULL), as.list(dr$variables)), function(v) square_plot(prepDNAm::qc_plot_dimred(dr, "pca", colour = v)))
+  plot_grid(plots)
+}
+```
+
+## UMAP
+
+```{r, results="asis", fig.width=6, fig.height=6}
+if (!is.null(dr) && dr$has_umap) {
+  plots <- lapply(c(list(NULL), as.list(dr$variables)), function(v) square_plot(prepDNAm::qc_plot_dimred(dr, "umap", colour = v)))
+  plot_grid(plots)
+}
+```
+
+## Association of principal components with sample variables
+
+```{r, fig.width=9, fig.height=5}
+if (!is.null(dr)) interactive_plot(prepDNAm::qc_plot_pc_association(dr), height = 90 + 20 * length(dr$variables) + 30 * length(unique(dr$groups)))
+```
+
+```{r}
+if (!is.null(dr)) {
+  ve <- data.frame(component = names(dr$var_explained), variance_explained = round(100 * dr$var_explained, 1))
+  DT::datatable(ve, rownames = FALSE, options = list(dom = "t", pageLength = 100), colnames = c("component", "variance explained (%)"))
+}
+```

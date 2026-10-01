@@ -1,0 +1,26 @@
+---
+title: "2. Control probes"
+params:
+  run_dir: NULL
+---
+
+```{r setup, include=FALSE}
+source("_setup.R", local = TRUE)
+types <- prepDNAm::qc_control_types(rd)
+n <- nrow(rd$samples)
+fig_w <- if (n <= 32) 9 else if (n <= 96) 12 else 15
+```
+
+Intensities of the Illumina control probes, per sample (x axis) and fluorophore. Removed samples are drawn as crosses. The plots are static to keep the page small; to explore one interactively, use `plotly::ggplotly(prepDNAm::qc_plot_controls(run_dir, "<type>"))`. Expected patterns: bisulfite conversion I/II and specificity probes should show a clear high/low split between converted and unconverted (or matched and mismatched) probes; hybridisation and extension probes should scale as high &gt; medium &gt; low; negative controls should be low and consistent; `NORM_*` boxplots should be similar across samples within a batch.
+
+```{r, results="asis"}
+if (length(types) == 0) not_available("Control probe data")
+```
+
+```{r, results="asis", fig.width=fig_w, fig.height=4}
+for (type in types) {
+  cat("\n\n## ", type, "\n\n", sep = "")
+  p <- prepDNAm::qc_plot_controls(rd, type)
+  print(p)   # static: interactive versions get too large with many samples
+}
+```

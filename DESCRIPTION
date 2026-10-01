@@ -1,0 +1,72 @@
+Package: prepDNAm
+Title: Preprocessing and Quality Control of Illumina DNA Methylation Array
+    Data
+Version: 0.0.0.9000
+Authors@R: 
+    person("Chiara", "Herzog", , "ch2151@cam.ac.uk", role = c("aut", "cre"),
+           comment = c(ORCID = "0000-0002-1572-498X"))
+Description: Takes raw IDAT files, signal-intensity tables (e.g. from GEO)
+    or beta matrices through normalisation, sample and probe filtering and
+    imputation to an analysis-ready beta matrix, with a resumable,
+    per-batch workflow and an interactive HTML QC report.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+LazyDataCompression: xz
+Roxygen: list(markdown = TRUE)
+Depends: 
+    R (>= 4.1.0)
+Imports: 
+    BiocParallel,
+    data.table,
+    GenomicRanges,
+    ggplot2,
+    jsonlite,
+    logger,
+    matrixStats,
+    methods,
+    minfi,
+    parallelly,
+    rlang,
+    sessioninfo,
+    withr,
+    yaml
+Suggests: 
+    ChAMP,
+    dplyr,
+    DT,
+    EpiDISH,
+    ewastools (>= 1.8.1),
+    htmltools,
+    IlluminaHumanMethylation450kanno.ilmn12.hg19,
+    IlluminaHumanMethylation450kmanifest,
+    IlluminaHumanMethylationEPICanno.ilm10b4.hg19,
+    IlluminaHumanMethylationEPICmanifest,
+    IlluminaHumanMethylationEPICv2anno.20a1.hg38,
+    IlluminaHumanMethylationEPICv2manifest,
+    IlluminaMouseMethylationanno.12.v1.mm10,
+    IlluminaMouseMethylationmanifest,
+    impute,
+    janitor,
+    knitr,
+    minfiData,
+    minfiDataEPIC,
+    plotly,
+    readxl,
+    rmarkdown,
+    RPMM,
+    shinyMethyl,
+    testthat (>= 3.0.0),
+    tibble,
+    tidyselect,
+    uwot,
+    WIDclocks,
+    writexl
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+Config/roxygen2/version: 8.1.0
+Remotes: 
+    hhhh5/ewastools,
+    chiaraherzog/IlluminaMouseMethylationmanifest,
+    chiaraherzog/IlluminaMouseMethylationanno.12.v1.mm10,
+    chiaraherzog/WIDclocks

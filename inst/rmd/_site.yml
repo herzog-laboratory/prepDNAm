@@ -1,0 +1,32 @@
+name: "prepDNAm QC report"
+output_dir: "_site"
+exclude: ["_report_options.yml"]
+navbar:
+  title: "prepDNAm QC"
+  left:
+    - text: "Overview"
+      href: index.html
+    - text: "1 Samples"
+      href: 1-samples.html
+    - text: "2 Controls"
+      href: 2-controls.html
+    - text: "3 Intensities"
+      href: 3-intensities.html
+    - text: "4 Densities"
+      href: 4-beta-densities.html
+    - text: "5 Identity"
+      href: 5-identity.html
+    - text: "6 PCA / UMAP"
+      href: 6-dimred.html
+    - text: "7 Run"
+      href: 7-run.html
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float:
+      collapsed: false
+    toc_depth: 2
+    self_contained: true
+    df_print: paged
+    css: styles.css

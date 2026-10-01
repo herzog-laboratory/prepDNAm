@@ -1,0 +1,13 @@
+.DS_Store
+.Rhistory
+.Rproj.user
+*.Rcheck
+dev/runs
+setup.R
+/doc/
+/Meta/
+
+# internal notes and development files (kept locally, not in the repository)
+DESIGN.md
+REVIEW_LOG.md
+/dev/
