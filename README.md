@@ -34,7 +34,7 @@ BiocManager::install(c("minfi", "ChAMP", "impute"))
 BiocManager::install(c("IlluminaHumanMethylationEPICv2manifest",
                        "IlluminaHumanMethylationEPICv2anno.20a1.hg38"))
 
-remotes::install_github("chiaraherzog/prepDNAm")
+remotes::install_github("herzog-laboratory/prepDNAm")
 ```
 
 See `vignette("prepDNAm")` for the packages needed per array and the optional
